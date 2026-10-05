@@ -16,20 +16,26 @@ interface Ack {
   roomId?: string;
 }
 
+const shuffle = <T,>(arr: T[]): T[] => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
 export function useOnlineGame() {
   const profileRef = useRef<StoredProfile>(loadProfile());
 
-  // Mode: 'socket' or 'peer'
   const modeRef = useRef<'socket' | 'peer'>('peer');
 
-  // Socket.io refs
   const socketRef = useRef<Socket | null>(null);
 
-  // PeerJS refs (for Serverless P2P multiplayer on Vercel)
   const peerRef = useRef<Peer | null>(null);
-  const connectionsRef = useRef<Map<string, DataConnection>>(new Map()); // player id -> connection (Host side)
-  const hostConnRef = useRef<DataConnection | null>(null); // Client side -> Host connection
-  const hostRoomStateRef = useRef<any>(null); // Host side state management
+  const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
+  const hostConnRef = useRef<DataConnection | null>(null);
+  const hostRoomStateRef = useRef<any>(null);
   const hostTimerRef = useRef<any>(null);
 
   const [status, setStatus] = useState<ConnStatus>('idle');
@@ -50,9 +56,6 @@ export function useOnlineGame() {
     setBooklets([]);
   }, []);
 
-  /* ------------------------------------------------------------------ *
-   * 1. Socket.io Logic (if external backend server is configured)
-   * ------------------------------------------------------------------ */
   const attachSocket = useCallback(
     (s: Socket) => {
       s.on('connect', () => {
@@ -79,9 +82,6 @@ export function useOnlineGame() {
     [resetLocalView, updateProfile]
   );
 
-  /* ------------------------------------------------------------------ *
-   * 2. PeerJS P2P Logic (Serverless multiplayer working on Vercel!)
-   * ------------------------------------------------------------------ */
   const generateRoomCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -251,7 +251,7 @@ export function useOnlineGame() {
 
     room.players.forEach((p: any, i: number) => {
       let content = room.submissions.get(p.id) ?? '';
-      if (type === 'GUESS' && !content) content = '???';
+      if (type === 'GUESS' && !content.trim()) content = '(시간초과 미작성)';
       const bIdx = bookletIndexFor(i, room.round, N);
 
       room.booklets[bIdx].steps.push({
@@ -279,7 +279,10 @@ export function useOnlineGame() {
     const room = hostRoomStateRef.current;
     if (!room) return;
 
-    if (msg.type === 'updateSettings' && room.phase === 'LOBBY') {
+    if (msg.type === 'shufflePlayers' && room.phase === 'LOBBY') {
+      room.players = shuffle(room.players);
+      broadcastPeerState();
+    } else if (msg.type === 'updateSettings' && room.phase === 'LOBBY') {
       room.settings = { ...room.settings, ...msg.settings };
       broadcastPeerState();
     } else if (msg.type === 'startGame' && room.phase === 'LOBBY') {
@@ -322,7 +325,6 @@ export function useOnlineGame() {
     }
   }, [advancePeerRound, broadcastPeerState, startPeerPlaying, startPeerWordPick]);
 
-  // Create Peer Room (Host)
   const createPeerRoom = useCallback(async (name: string, avatar: string): Promise<boolean> => {
     setStatus('connecting');
     const roomId = generateRoomCode();
@@ -399,7 +401,6 @@ export function useOnlineGame() {
     });
   }, [broadcastPeerState, handleHostAction, updateProfile]);
 
-  // Join Peer Room (Client)
   const joinPeerRoom = useCallback(async (code: string, name: string, avatar: string): Promise<boolean> => {
     setStatus('connecting');
     const targetPeerId = `tele-room-${code.toUpperCase()}`;
@@ -456,9 +457,6 @@ export function useOnlineGame() {
     });
   }, [updateProfile]);
 
-  /* ------------------------------------------------------------------ *
-   * Public Action Trigger
-   * ------------------------------------------------------------------ */
   const sendAction = (type: string, payload: any = {}) => {
     const p = profileRef.current;
     if (modeRef.current === 'peer') {
@@ -485,9 +483,7 @@ export function useOnlineGame() {
     createRoom: async (name: string, avatar: string) => {
       setError('');
       if (SERVER_URL) {
-        // Use Socket.io if explicit server URL provided
         modeRef.current = 'socket';
-        // Socket.io call
         return false;
       }
       return createPeerRoom(name, avatar);
@@ -508,6 +504,7 @@ export function useOnlineGame() {
       updateProfile({ roomId: null });
       resetLocalView();
     },
+    shufflePlayers: () => sendAction('shufflePlayers'),
     updateSettings: (s: Settings) => sendAction('updateSettings', { settings: s }),
     startGame: async (): Promise<Ack> => {
       if (state && state.players.length < 3) {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Copy, Check, Play, LogOut, Layers, Clock } from 'lucide-react';
+import { Users, Copy, Check, Play, LogOut, Shuffle } from 'lucide-react';
 import { OnlineState, Settings } from '../types/game';
 import { WORD_CATEGORIES, TOTAL_WORD_COUNT, parseCustomWords } from '../data/words';
 import { isOdd, totalRoundsFor } from '../game/logic';
@@ -9,6 +9,7 @@ import { Header } from './Header';
 interface OnlineLobbyProps {
   state: OnlineState;
   onUpdateSettings: (s: Settings) => void;
+  onShufflePlayers: () => void;
   onStartGame: () => Promise<{ ok: boolean; error?: string }>;
   onLeaveRoom: () => void;
   onOpenRules: () => void;
@@ -21,6 +22,7 @@ interface OnlineLobbyProps {
 export const OnlineLobby: React.FC<OnlineLobbyProps> = ({
   state,
   onUpdateSettings,
+  onShufflePlayers,
   onStartGame,
   onLeaveRoom,
   onOpenRules,
@@ -43,6 +45,11 @@ export const OnlineLobby: React.FC<OnlineLobbyProps> = ({
     navigator.clipboard.writeText(state.roomId);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShuffle = () => {
+    soundFx.dice();
+    onShufflePlayers();
   };
 
   const handleStart = async () => {
@@ -89,11 +96,23 @@ export const OnlineLobby: React.FC<OnlineLobbyProps> = ({
         <div className="row row--between">
           <h3 className="card__title" style={{ margin: 0 }}>
             <Users size={22} className="text-teal" />
-            <span>참가자 목록 ({numPlayers}명)</span>
+            <span>참가자 전달 순서 ({numPlayers}명)</span>
           </h3>
-          <span className={`pill ${odd ? 'pill--odd' : 'pill--even'}`}>
-            {odd ? `⚡ 홀수 인원 (${rounds}R)` : `✨ 짝수 인원 (${rounds}R)`}
-          </span>
+          <div className="row">
+            {isHost && (
+              <button
+                type="button"
+                className="btn btn--sm btn--purple"
+                onClick={handleShuffle}
+                title="전달 순서 무작위 섞기"
+              >
+                <Shuffle size={16} /> 순서 섞기
+              </button>
+            )}
+            <span className={`pill ${odd ? 'pill--odd' : 'pill--even'}`}>
+              {odd ? `⚡ 홀수 인원 (${rounds}R)` : `✨ 짝수 인원 (${rounds}R)`}
+            </span>
+          </div>
         </div>
 
         <div className="notice notice--odd">
@@ -104,10 +123,11 @@ export const OnlineLobby: React.FC<OnlineLobbyProps> = ({
           )}
         </div>
 
-        {/* Players Grid */}
+        {/* Players Grid with Order Numbers */}
         <div className="player-grid">
-          {state.players.map((p) => (
+          {state.players.map((p, idx) => (
             <div key={p.id} className={`player-tag ${!p.connected ? 'is-off' : ''}`}>
+              <span className="player-tag__num">{idx + 1}.</span>
               <span className="avatar avatar--sm">{p.avatar}</span>
               <span className="player-tag__name font-bold">{p.name}</span>
               {p.id === state.hostId && <span className="badge">방장</span>}

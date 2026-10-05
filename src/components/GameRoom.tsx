@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, Send, CheckCircle2, Sparkles } from 'lucide-react';
-import { Player, StepType, Task } from '../types/game';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Clock, Send } from 'lucide-react';
+import { Player, Task } from '../types/game';
 import { DrawingCanvas } from './DrawingCanvas';
 import { soundFx } from '../utils/sound';
 import { Header } from './Header';
@@ -46,6 +46,38 @@ export const GameRoom: React.FC<GameRoomProps> = ({
   const [canvasData, setCanvasData] = useState<string>('');
   const [timeLeft, setTimeLeft] = useState<number>(60);
 
+  // Keep fresh refs so auto-submit closure on timer expiry reads current values up to the millisecond!
+  const guessInputRef = useRef<string>(guessInput);
+  guessInputRef.current = guessInput;
+
+  const canvasDataRef = useRef<string>(canvasData);
+  canvasDataRef.current = canvasData;
+
+  const isSubmittedRef = useRef<boolean>(isSubmitted);
+  isSubmittedRef.current = isSubmitted;
+
+  const hasAutoSubmittedRef = useRef<boolean>(false);
+
+  // Reset inputs & auto-submit flag on round/task change
+  useEffect(() => {
+    setGuessInput('');
+    setCanvasData('');
+    hasAutoSubmittedRef.current = false;
+  }, [round, task]);
+
+  const handleAutoSubmit = useCallback(() => {
+    if (isSubmittedRef.current || hasAutoSubmittedRef.current) return;
+    hasAutoSubmittedRef.current = true;
+    soundFx.whistle();
+
+    if (task.type === 'DRAWING') {
+      onSubmit(canvasDataRef.current);
+    } else {
+      const text = guessInputRef.current.trim();
+      onSubmit(text ? text : '(시간초과 미작성)');
+    }
+  }, [onSubmit, task.type]);
+
   // Timer Countdown loop
   useEffect(() => {
     const updateTime = () => {
@@ -59,8 +91,7 @@ export const GameRoom: React.FC<GameRoomProps> = ({
         soundFx.tick(false);
       }
 
-      if (rem <= 0 && !isSubmitted) {
-        soundFx.whistle();
+      if (rem <= 0 && !isSubmittedRef.current && !hasAutoSubmittedRef.current) {
         handleAutoSubmit();
       }
     };
@@ -68,22 +99,16 @@ export const GameRoom: React.FC<GameRoomProps> = ({
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
-  }, [deadline, serverOffset, isSubmitted, task]);
-
-  const handleAutoSubmit = () => {
-    if (task.type === 'DRAWING') {
-      onSubmit(canvasData);
-    } else {
-      onSubmit(guessInput.trim() || '???');
-    }
-  };
+  }, [deadline, serverOffset, handleAutoSubmit]);
 
   const handleSubmit = () => {
+    if (isSubmitted) return;
     soundFx.pop();
     if (task.type === 'DRAWING') {
-      onSubmit(canvasData);
+      onSubmit(canvasDataRef.current);
     } else {
-      onSubmit(guessInput.trim() || '???');
+      const text = guessInputRef.current.trim();
+      onSubmit(text ? text : '(시간초과 미작성)');
     }
   };
 
@@ -140,7 +165,7 @@ export const GameRoom: React.FC<GameRoomProps> = ({
               {/* Sticky Note Prompt */}
               <div className="sticky sticky--yellow">
                 <small>스케치북에 그릴 단어</small>
-                <b>"{task.text}"</b>
+                <b>"{task.text && task.text !== '???' ? task.text : '(시간초과 미작성 단어)'}"</b>
               </div>
 
               {/* Drawing Canvas */}
@@ -163,7 +188,7 @@ export const GameRoom: React.FC<GameRoomProps> = ({
                 {task.image ? (
                   <img src={task.image} alt="Previous Player Drawing" />
                 ) : (
-                  <div className="empty-note">그림 로딩 중...</div>
+                  <div className="empty-note">(이전 플레이어가 그림을 제출하지 않았습니다)</div>
                 )}
               </div>
 

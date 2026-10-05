@@ -8,10 +8,7 @@ import {
   X, 
   Play, 
   CheckCircle2, 
-  HelpCircle,
-  Clock,
-  Layers,
-  Dices
+  Shuffle
 } from 'lucide-react';
 import { Player, Settings } from '../types/game';
 import { WORD_CATEGORIES, TOTAL_WORD_COUNT, parseCustomWords } from '../data/words';
@@ -92,6 +89,18 @@ export const Lobby: React.FC<LobbyProps> = ({
     if (localPlayers.length <= 3) return;
     setLocalPlayers((prev) => prev.filter((p) => p.id !== id));
     soundFx.click();
+  };
+
+  const handleShuffleLocalPlayers = () => {
+    soundFx.dice();
+    setLocalPlayers((prev) => {
+      const arr = [...prev];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    });
   };
 
   const handleStartPassAndPlay = () => {
@@ -195,11 +204,21 @@ export const Lobby: React.FC<LobbyProps> = ({
           <div className="row row--between">
             <h3 className="card__title" style={{ margin: 0 }}>
               <Users size={22} className="text-teal" />
-              <span>참가 플레이어 ({numLocalPlayers}명)</span>
+              <span>참가 플레이어 순서 ({numLocalPlayers}명)</span>
             </h3>
-            <span className={`pill ${localIsOdd ? 'pill--odd' : 'pill--even'}`}>
-              {localIsOdd ? `⚡ 홀수 인원 (${localRounds}R)` : `✨ 짝수 인원 (${localRounds}R)`}
-            </span>
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn--sm btn--purple"
+                onClick={handleShuffleLocalPlayers}
+                title="전달 순서 무작위 섞기"
+              >
+                <Shuffle size={16} /> 순서 섞기
+              </button>
+              <span className={`pill ${localIsOdd ? 'pill--odd' : 'pill--even'}`}>
+                {localIsOdd ? `⚡ 홀수 인원 (${localRounds}R)` : `✨ 짝수 인원 (${localRounds}R)`}
+              </span>
+            </div>
           </div>
 
           <div className="notice notice--odd">
@@ -210,10 +229,11 @@ export const Lobby: React.FC<LobbyProps> = ({
             )}
           </div>
 
-          {/* Players Grid */}
+          {/* Players Grid with Order Sequence Numbers */}
           <div className="player-grid">
-            {localPlayers.map((p) => (
+            {localPlayers.map((p, idx) => (
               <div key={p.id} className="player-tag">
+                <span className="player-tag__num">{idx + 1}.</span>
                 <span className="avatar avatar--sm">{p.avatar}</span>
                 <span className="player-tag__name font-bold">{p.name}</span>
                 {localPlayers.length > 3 && (
@@ -364,7 +384,6 @@ export const Lobby: React.FC<LobbyProps> = ({
       {/* ONLINE MULTIPLAYER CONTENT */}
       {tab === 'ONLINE' && (
         <div className="card stack">
-          {/* Profile Picker */}
           <div className="stack">
             <span className="field__label"><b>내 캐릭터 & 닉네임 설정</b></span>
             <div className="row">

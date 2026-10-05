@@ -8,9 +8,6 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/* ------------------------------------------------------------------ *
- *  제시어 DB (클라이언트와 shared/words.json 을 공유)
- * ------------------------------------------------------------------ */
 const wordData = JSON.parse(fs.readFileSync(path.join(__dirname, '../shared/words.json'), 'utf8'));
 const CATEGORIES = wordData.categories.map((c) => ({
   id: c.id,
@@ -41,17 +38,11 @@ function dealCard(categoryId, customWords, used) {
   return card;
 }
 
-/* ------------------------------------------------------------------ *
- *  게임 규칙 (src/game/logic.ts 와 동일)
- *   짝수: 1라운드에 자기 스케치북 제시어를 그림 → 총 N라운드
- *   홀수: 제시어를 바로 옆 사람에게 넘김 → 총 N-1라운드
- * ------------------------------------------------------------------ */
 const isOdd = (n) => n % 2 === 1;
 const totalRoundsFor = (n) => (isOdd(n) ? n - 1 : n);
 const stepTypeFor = (round) => (round % 2 === 1 ? 'DRAWING' : 'GUESS');
 const bookletIndexFor = (p, round, n) => (((p - (round - 1) - (isOdd(n) ? 1 : 0)) % n) + n) % n;
 
-/* ------------------------------------------------------------------ */
 const MIN_PLAYERS = 3;
 const MAX_PLAYERS = 10;
 const WORD_PICK_SECONDS = 25;
@@ -96,7 +87,6 @@ function defaultSettings() {
   return { category: 'easy', drawTime: 60, guessTime: 30, customWords: [] };
 }
 
-/* ------------------------------ 상태 전송 ------------------------------ */
 function submittedFlag(room, pid) {
   if (room.phase === 'WORD_PICK') return room.picks.has(pid);
   if (room.phase === 'PLAYING') return room.submissions.has(pid);
@@ -154,14 +144,12 @@ function sendRevealData(room, player) {
   if (player.connected && player.socketId) io.to(player.socketId).emit('revealData', { booklets: room.booklets });
 }
 
-/** 접속(재접속) 직후 현재 단계에 필요한 모든 데이터를 한 번에 보내준다. */
 function syncPlayer(room, player) {
   io.to(player.socketId).emit('state', stateFor(room, player.id));
   if (room.phase === 'PLAYING') sendTask(room, player);
   if (room.phase === 'REVEAL') sendRevealData(room, player);
 }
 
-/* ------------------------------ 타이머 ------------------------------ */
 function clearTimers(room) {
   clearTimeout(room.timer);
   clearTimeout(room.grace);
@@ -186,7 +174,6 @@ function ensureHost(room) {
   if (next) room.hostId = next.id;
 }
 
-/* ------------------------------ 게임 진행 ------------------------------ */
 function startWordPick(room) {
   clearTimers(room);
   const used = new Set();
@@ -241,7 +228,6 @@ function beginRound(room) {
   room.submissions = new Map();
   const secs = stepTypeFor(room.round) === 'DRAWING' ? room.settings.drawTime : room.settings.guessTime;
   room.deadline = Date.now() + secs * 1000;
-  // 이미 나간 플레이어는 이번 라운드를 빈 칸으로 처리해 게임이 멈추지 않게 한다.
   room.players.forEach((p) => {
     if (!p.connected) room.submissions.set(p.id, '');
   });
@@ -265,7 +251,7 @@ function advance(room) {
   const type = stepTypeFor(room.round);
   room.players.forEach((p, i) => {
     let content = room.submissions.get(p.id) ?? '';
-    if (type === 'GUESS' && !content) content = '???';
+    if (type === 'GUESS' && !content.trim()) content = '(시간초과 미작성)';
     room.booklets[bookletIndexFor(i, room.round, N)].steps.push({
       type,
       authorId: p.id,
@@ -303,7 +289,13 @@ function resetToLobby(room) {
   room.reactions = {};
 }
 
-/* ------------------------------ 소켓 ------------------------------ */
+function getCtx(socket) {
+  const room = rooms.get(socket.data.roomId);
+  if (!room) return {};
+  const player = room.players.find((p) => p.id === socket.data.playerId);
+  return { room, player };
+}
+
 function attachPlayer(room, socket, player) {
   player.socketId = socket.id;
   player.connected = true;
@@ -313,13 +305,6 @@ function attachPlayer(room, socket, player) {
   clearTimeout(player.dropTimer);
   clearTimeout(room.cleanup);
   ensureHost(room);
-}
-
-function getCtx(socket) {
-  const room = rooms.get(socket.data.roomId);
-  if (!room) return {};
-  const player = room.players.find((p) => p.id === socket.data.playerId);
-  return { room, player };
 }
 
 function detach(room, player, { remove }) {
@@ -411,6 +396,13 @@ io.on('connection', (socket) => {
     attachPlayer(room, socket, player);
     cb?.({ ok: true, roomId: room.roomId });
     syncPlayer(room, player);
+    broadcast(room);
+  });
+
+  socket.on('shufflePlayers', () => {
+    const { room, player } = getCtx(socket);
+    if (!room || !player || room.hostId !== player.id || room.phase !== 'LOBBY') return;
+    room.players = shuffle(room.players);
     broadcast(room);
   });
 

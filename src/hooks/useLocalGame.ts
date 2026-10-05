@@ -11,7 +11,6 @@ export interface LocalState {
   cards: string[][];
   booklets: Booklet[];
   phase: LocalPhase;
-  /** SHIELD 다음에 보여줄 단계 */
   shieldNext: 'PICK' | 'TURN';
   cursor: number;
   round: number;
@@ -21,7 +20,6 @@ export interface LocalState {
   reactions: Reactions;
 }
 
-/** 한 기기로 돌려가며 하는 모드의 진행 상태 */
 export function useLocalGame() {
   const [game, setGame] = useState<LocalState | null>(null);
 
@@ -50,7 +48,6 @@ export function useLocalGame() {
     });
   }, []);
 
-  /** "내 차례 시작" 버튼 */
   const ready = useCallback(() => {
     setGame((g) => {
       if (!g || g.phase !== 'SHIELD') return g;
@@ -94,7 +91,7 @@ export function useLocalGame() {
       const me = g.players[g.cursor];
       const type = stepTypeFor(g.round);
       const target = bookletIndexFor(g.cursor, g.round, N);
-      const value = type === 'GUESS' && !content.trim() ? '???' : content;
+      const value = content.trim() ? content.trim() : (type === 'GUESS' ? '(시간초과 미작성)' : '');
       const booklets = g.booklets.map((b, i) =>
         i === target
           ? {
@@ -118,7 +115,6 @@ export function useLocalGame() {
     setGame((g) => (g ? { ...g, reveal: { b, s } } : g));
   }, []);
 
-  /** 한 기기에서는 누가 눌렀는지 구분이 없으므로, 누를 때마다 박수처럼 +1 */
   const react = useCallback((key: string, type: ReactionType) => {
     setGame((g) => {
       if (!g) return g;

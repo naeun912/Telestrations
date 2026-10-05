@@ -32,16 +32,16 @@ export const App: React.FC = () => {
     soundFx.resumeBgmIfNeeded();
   };
 
-  // Determine active view
   const isOnlineActive = mode === 'ONLINE' && online.state !== null;
 
   return (
     <div onClick={handleUserInteraction}>
-      {/* 1. ONLINE LOBBY (if online room created/joined) */}
+      {/* 1. ONLINE LOBBY */}
       {isOnlineActive && online.state?.phase === 'LOBBY' && (
         <OnlineLobby
           state={online.state}
           onUpdateSettings={online.updateSettings}
+          onShufflePlayers={online.shufflePlayers}
           onStartGame={online.startGame}
           onLeaveRoom={online.leaveRoom}
           onOpenRules={() => setShowRules(true)}
@@ -249,7 +249,7 @@ export const App: React.FC = () => {
         </>
       )}
 
-      {/* 6. MAIN LOBBY (HOME) */}
+      {/* 6. MAIN LOBBY */}
       {!isOnlineActive && !local.game && (
         <Lobby
           onStartPassAndPlay={(players, settings) => {

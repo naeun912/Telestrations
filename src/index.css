@@ -1,6 +1,6 @@
 /* ===================================================================
    텔레스트레이션 – 보드게임 느낌의 디자인 시스템 (순수 CSS)
-   두꺼운 먹색 테두리 · 스티커 같은 그림자 · 마커 색상 · 스프링 스케치북
+   두꺼운 먹색 테두리 · 스티커 같은 그림자 · 마커 색상 · 프레시 파티 테마
    =================================================================== */
 
 :root {
@@ -78,10 +78,12 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: nowrap;
 }
 .topbar__right {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .center {
@@ -108,6 +110,43 @@ p {
 }
 .small {
   font-size: 0.9rem;
+}
+
+/* ---------- 로고 (줄바꿈 방지) ---------- */
+.logo {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 0;
+  font-weight: normal;
+  user-select: none;
+  white-space: nowrap;
+}
+.logo__tile {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 52px;
+  font-size: 1.7rem;
+  color: #fff;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 2px 3px 0 var(--ink);
+  text-shadow: 2px 2px 0 rgba(29, 27, 58, 0.55);
+  animation: wiggle 3.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.logo__tile:nth-child(even) {
+  animation-delay: -1.2s;
+}
+.logo--small .logo__tile {
+  width: 32px;
+  height: 38px;
+  font-size: 1.2rem;
+  border-radius: 9px;
+  box-shadow: 2px 2px 0 var(--ink);
 }
 
 /* ---------- 버튼 ---------- */
@@ -197,6 +236,7 @@ p {
   display: grid;
   place-items: center;
   transition: transform 0.1s;
+  flex-shrink: 0;
 }
 .icon-btn:active {
   transform: translateY(2px);
@@ -269,39 +309,6 @@ p {
 }
 .notice--odd {
   background: #fff0cc;
-}
-
-/* ---------- 로고 ---------- */
-.logo {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin: 0;
-  font-weight: normal;
-}
-.logo__tile {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 62px;
-  font-size: 2.1rem;
-  color: #fff;
-  border: 3px solid var(--ink);
-  border-radius: 14px;
-  box-shadow: 3px 4px 0 var(--ink);
-  text-shadow: 2px 2px 0 rgba(29, 27, 58, 0.55);
-  animation: wiggle 3.2s ease-in-out infinite;
-}
-.logo__tile:nth-child(even) {
-  animation-delay: -1.2s;
-}
-.logo--small .logo__tile {
-  width: 34px;
-  height: 40px;
-  font-size: 1.3rem;
-  border-radius: 10px;
-  box-shadow: 2px 3px 0 var(--ink);
 }
 
 /* ---------- 입력 ---------- */
@@ -699,6 +706,11 @@ p {
   border-radius: 16px;
   padding: 8px 12px;
   min-width: 0;
+}
+.player-tag__num {
+  font-weight: bold;
+  color: var(--blue);
+  font-size: 1.1rem;
 }
 .player-tag__name {
   flex: 1;
@@ -1458,11 +1470,13 @@ p {
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 600px) {
   .logo__tile {
-    width: 42px;
-    height: 50px;
-    font-size: 1.7rem;
+    width: 32px;
+    height: 38px;
+    font-size: 1.2rem;
+    border-radius: 8px;
+    box-shadow: 1px 2px 0 var(--ink);
   }
   .btn--lg {
     font-size: 1.2rem;
