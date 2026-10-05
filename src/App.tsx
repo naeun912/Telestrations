@@ -1,233 +1,281 @@
-import React, { useState, useEffect } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { Booklet, BookletStep, GameMode, GamePhase, Player, RoomSettings } from './types/game';
-import { getRandomWords } from './data/words';
+import React, { useState } from 'react';
+import { useLocalGame } from './hooks/useLocalGame';
+import { useOnlineGame } from './hooks/useOnlineGame';
+import { soundFx } from './utils/sound';
 import { Lobby } from './components/Lobby';
+import { OnlineLobby } from './components/OnlineLobby';
+import { WordPickPhase } from './components/WordPickPhase';
+import { PassAndPlayShield } from './components/PassAndPlayShield';
 import { GameRoom } from './components/GameRoom';
 import { RevealPresentation } from './components/RevealPresentation';
-import { soundFx } from './utils/sound';
+import { RulesModal } from './components/RulesModal';
 
 export const App: React.FC = () => {
-  const [phase, setPhase] = useState<GamePhase>('LOBBY');
-  const [mode, setMode] = useState<GameMode>('PASS_AND_PLAY');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [settings, setSettings] = useState<RoomSettings>({
-    category: 'easy',
-    timeLimit: 60,
-    customWords: []
-  });
+  const [mode, setMode] = useState<'PASS_AND_PLAY' | 'ONLINE'>('PASS_AND_PLAY');
+  const [showRules, setShowRules] = useState(false);
 
-  const [booklets, setBooklets] = useState<Booklet[]>([]);
-  const [currentRound, setCurrentRound] = useState<number>(1);
-  const [totalRounds, setTotalRounds] = useState<number>(4);
-  const [passAndPlayIndex, setPassAndPlayIndex] = useState<number>(0);
-  const [showShield, setShowShield] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState(() => soundFx.isMuted());
+  const [isBgmOn, setIsBgmOn] = useState(() => soundFx.isBgmOn());
 
-  // Socket.io for Realtime Online mode
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [onlineRoomId, setOnlineRoomId] = useState<string>('');
+  const local = useLocalGame();
+  const online = useOnlineGame();
 
-  useEffect(() => {
-    // Initialize Socket connection conditionally
-    const newSocket = io(window.location.origin, {
-      autoConnect: false,
-    });
-    setSocket(newSocket);
-
-    newSocket.on('roomUpdated', (room) => {
-      setPlayers(room.players);
-      setSettings(room.settings);
-    });
-
-    newSocket.on('gameStarted', (room) => {
-      setBooklets(room.booklets);
-      setCurrentRound(room.currentRound);
-      setTotalRounds(room.totalRounds);
-      setPhase('PLAYING');
-    });
-
-    newSocket.on('roundAdvanced', (room) => {
-      setBooklets(room.booklets);
-      setCurrentRound(room.currentRound);
-    });
-
-    newSocket.on('gameFinished', (room) => {
-      setBooklets(room.booklets);
-      setPhase('REVEAL');
-    });
-
-    return () => {
-      newSocket.disconnect();
-    };
-  }, []);
-
-  const toggleMute = () => {
-    const muted = soundFx.toggleMute();
-    setIsMuted(muted);
+  const handleToggleMute = () => {
+    setIsMuted(soundFx.toggleMute());
   };
 
-  // Start Pass & Play Game Local
-  const handleStartPassAndPlay = (selectedPlayers: Player[], roomSettings: RoomSettings) => {
-    const N = selectedPlayers.length;
-    const words = getRandomWords(N, roomSettings.category, roomSettings.customWords);
-    const isOdd = N % 2 !== 0;
-
-    // Initialize N booklets
-    const initialBooklets: Booklet[] = selectedPlayers.map((p, idx) => {
-      const secretWord = words[idx];
-      return {
-        id: `booklet_${idx}_${Date.now()}`,
-        originalOwnerId: p.id,
-        originalOwnerName: p.name,
-        originalWord: secretWord,
-        steps: [
-          {
-            stepIndex: 0,
-            type: 'WORD',
-            authorId: p.id,
-            authorName: p.name,
-            authorAvatar: p.avatar,
-            content: secretWord
-          }
-        ]
-      };
-    });
-
-    setMode('PASS_AND_PLAY');
-    setPlayers(selectedPlayers);
-    setSettings(roomSettings);
-    setBooklets(initialBooklets);
-    setCurrentRound(1);
-    setTotalRounds(N);
-    setPassAndPlayIndex(0);
-    setShowShield(true); // Privacy curtain on first turn!
-    setPhase('PLAYING');
+  const handleToggleBgm = () => {
+    setIsBgmOn(soundFx.toggleBgm());
   };
 
-  // Submit Step for Pass & Play Mode
-  const handleSubmitPassAndPlayStep = (content: string) => {
-    const N = players.length;
-    const isOdd = N % 2 !== 0;
-
-    // Calculate which booklet active player held in currentRound
-    let shift = isOdd ? (currentRound - 1) + 1 : (currentRound - 1);
-    let bookletIdx = (passAndPlayIndex - shift + N * 10) % N;
-
-    const activePlayer = players[passAndPlayIndex];
-
-    // Push new step to booklet
-    setBooklets(prevBooklets => {
-      const nextBooklets = [...prevBooklets];
-      const targetBooklet = { ...nextBooklets[bookletIdx] };
-      
-      const newStep: BookletStep = {
-        stepIndex: targetBooklet.steps.length,
-        type: currentRound % 2 === 1 ? 'DRAWING' : 'GUESS',
-        authorId: activePlayer.id,
-        authorName: activePlayer.name,
-        authorAvatar: activePlayer.avatar,
-        content
-      };
-
-      targetBooklet.steps = [...targetBooklet.steps, newStep];
-      nextBooklets[bookletIdx] = targetBooklet;
-      return nextBooklets;
-    });
-
-    // Advance Pass & Play turn
-    if (passAndPlayIndex < N - 1) {
-      setPassAndPlayIndex(prev => prev + 1);
-      setShowShield(true);
-    } else {
-      // All players in this round have submitted!
-      if (currentRound >= N) {
-        // Game Over -> Reveal phase!
-        setPhase('REVEAL');
-      } else {
-        // Next round
-        setCurrentRound(prev => prev + 1);
-        setPassAndPlayIndex(0);
-        setShowShield(true);
-      }
-    }
+  const handleUserInteraction = () => {
+    soundFx.resumeBgmIfNeeded();
   };
 
-  // Join or Create Online Room
-  const handleJoinOnlineRoom = (playerName: string, avatar: string, roomId?: string) => {
-    if (!socket) return;
-    socket.connect();
-
-    if (roomId) {
-      socket.emit('joinRoom', { roomId, playerName, avatar }, (res: any) => {
-        if (res.success) {
-          setOnlineRoomId(res.roomId);
-          setPlayers(res.room.players);
-          setSettings(res.room.settings);
-          setMode('ONLINE');
-        } else {
-          alert(res.error || '방 입장에 실패했습니다.');
-        }
-      });
-    } else {
-      socket.emit('createRoom', { playerName, avatar }, (res: any) => {
-        if (res.success) {
-          setOnlineRoomId(res.roomId);
-          setPlayers(res.room.players);
-          setSettings(res.room.settings);
-          setMode('ONLINE');
-        }
-      });
-    }
-  };
-
-  const handlePlayAgain = () => {
-    setPhase('LOBBY');
-  };
+  // Determine active view
+  const isOnlineActive = mode === 'ONLINE' && online.state !== null;
 
   return (
-    <div className="min-h-screen w-full flex flex-col justify-between py-6 px-3">
-      {/* Active Phase Display */}
-      {phase === 'LOBBY' && (
-        <Lobby
-          onStartPassAndPlay={handleStartPassAndPlay}
-          onJoinOnlineRoom={handleJoinOnlineRoom}
+    <div onClick={handleUserInteraction}>
+      {/* 1. ONLINE LOBBY (if online room created/joined) */}
+      {isOnlineActive && online.state?.phase === 'LOBBY' && (
+        <OnlineLobby
+          state={online.state}
+          onUpdateSettings={online.updateSettings}
+          onStartGame={online.startGame}
+          onLeaveRoom={online.leaveRoom}
+          onOpenRules={() => setShowRules(true)}
           isMuted={isMuted}
-          onToggleMute={toggleMute}
+          isBgmOn={isBgmOn}
+          onToggleMute={handleToggleMute}
+          onToggleBgm={handleToggleBgm}
         />
       )}
 
-      {phase === 'PLAYING' && (
+      {/* 2. ONLINE WORD PICK PHASE */}
+      {isOnlineActive && online.state?.phase === 'WORD_PICK' && (
+        <WordPickPhase
+          card={online.state.card || []}
+          onPickWord={online.pickWord}
+          isPicked={online.state.picked}
+        />
+      )}
+
+      {/* 3. ONLINE PLAYING IN-GAME */}
+      {isOnlineActive && online.state?.phase === 'PLAYING' && online.task && (
         <GameRoom
-          players={players}
-          settings={settings}
-          booklets={booklets}
-          currentRound={currentRound}
-          totalRounds={totalRounds}
-          passAndPlayIndex={passAndPlayIndex}
-          showShield={showShield}
-          onShieldReady={() => setShowShield(false)}
-          onSubmitStep={(content) => {
-            if (mode === 'PASS_AND_PLAY') {
-              handleSubmitPassAndPlayStep(content);
-            } else if (socket) {
-              socket.emit('submitStep', { roomId: onlineRoomId, content });
+          task={online.task}
+          round={online.state.round}
+          totalRounds={online.state.totalRounds}
+          deadline={online.state.deadline}
+          serverOffset={online.offset}
+          activePlayer={
+            online.state.players.find((p) => p.id === online.state?.youId) || {
+              id: 'you',
+              name: '나',
+              avatar: '🐶',
             }
-          }}
+          }
+          players={online.state.players}
+          submittedCount={online.state.players.filter((p) => p.submitted).length}
+          totalCount={online.state.players.length}
+          isSubmitted={
+            online.state.players.find((p) => p.id === online.state?.youId)?.submitted || false
+          }
+          onSubmit={(content) => online.submit(online.state!.round, content)}
+          onOpenRules={() => setShowRules(true)}
+          isMuted={isMuted}
+          isBgmOn={isBgmOn}
+          onToggleMute={handleToggleMute}
+          onToggleBgm={handleToggleBgm}
         />
       )}
 
-      {phase === 'REVEAL' && (
+      {/* 4. ONLINE REVEAL PRESENTATION */}
+      {isOnlineActive && online.state?.phase === 'REVEAL' && (
         <RevealPresentation
-          booklets={booklets}
-          onPlayAgain={handlePlayAgain}
+          booklets={online.booklets}
+          pos={online.state.reveal}
+          reactions={online.state.reactions}
+          isHost={online.state.hostId === online.state.youId}
+          onNav={online.revealNav}
+          onReact={online.react}
+          onPlayAgain={online.playAgain}
+          onOpenRules={() => setShowRules(true)}
+          isMuted={isMuted}
+          isBgmOn={isBgmOn}
+          onToggleMute={handleToggleMute}
+          onToggleBgm={handleToggleBgm}
         />
       )}
 
-      {/* Footer */}
-      <footer className="text-center text-slate-500 text-xs py-4">
-        텔레스트레이션 Online - 보드게임 완벽 구현 파티 웹 앱
-      </footer>
+      {/* 5. PASS AND PLAY (LOCAL MODE) VIEWS */}
+      {!isOnlineActive && local.game && (
+        <>
+          {local.game.phase === 'SHIELD' && (
+            <PassAndPlayShield
+              targetPlayerName={local.game.players[local.game.cursor].name}
+              targetPlayerAvatar={local.game.players[local.game.cursor].avatar}
+              roundNumber={local.game.round}
+              totalRounds={local.game.totalRounds}
+              isPickPhase={local.game.shieldNext === 'PICK'}
+              onReady={local.ready}
+            />
+          )}
+
+          {local.game.phase === 'PICK' && (
+            <WordPickPhase
+              card={local.game.cards[local.game.cursor]}
+              onPickWord={local.pick}
+              playerName={local.game.players[local.game.cursor].name}
+              isLocalMode
+            />
+          )}
+
+          {local.game.phase === 'TURN' && (
+            <GameRoom
+              task={{
+                round: local.game.round,
+                type: local.game.round % 2 === 1 ? 'DRAWING' : 'GUESS',
+                text:
+                  local.game.round === 1
+                    ? local.game.booklets[
+                        (((local.game.cursor - (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                          local.game.players.length) +
+                          local.game.players.length) %
+                          local.game.players.length
+                      ].steps[0].content
+                    : local.game.booklets[
+                        (((local.game.cursor -
+                          (local.game.round - 1) -
+                          (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                          local.game.players.length) +
+                          local.game.players.length) %
+                          local.game.players.length
+                      ].steps[
+                        local.game.booklets[
+                          (((local.game.cursor -
+                            (local.game.round - 1) -
+                            (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                            local.game.players.length) +
+                            local.game.players.length) %
+                            local.game.players.length
+                        ].steps.length - 1
+                      ].type === 'DRAWING'
+                    ? null
+                    : local.game.booklets[
+                        (((local.game.cursor -
+                          (local.game.round - 1) -
+                          (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                          local.game.players.length) +
+                          local.game.players.length) %
+                          local.game.players.length
+                      ].steps[
+                        local.game.booklets[
+                          (((local.game.cursor -
+                            (local.game.round - 1) -
+                            (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                            local.game.players.length) +
+                            local.game.players.length) %
+                            local.game.players.length
+                        ].steps.length - 1
+                      ].content,
+                image:
+                  local.game.round > 1 &&
+                  local.game.booklets[
+                    (((local.game.cursor -
+                      (local.game.round - 1) -
+                      (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                      local.game.players.length) +
+                      local.game.players.length) %
+                      local.game.players.length
+                  ].steps[
+                    local.game.booklets[
+                      (((local.game.cursor -
+                        (local.game.round - 1) -
+                        (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                        local.game.players.length) +
+                        local.game.players.length) %
+                        local.game.players.length
+                    ].steps.length - 1
+                  ].type === 'DRAWING'
+                    ? local.game.booklets[
+                        (((local.game.cursor -
+                          (local.game.round - 1) -
+                          (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                          local.game.players.length) +
+                          local.game.players.length) %
+                          local.game.players.length
+                      ].steps[
+                        local.game.booklets[
+                          (((local.game.cursor -
+                            (local.game.round - 1) -
+                            (local.game.players.length % 2 === 1 ? 1 : 0)) %
+                            local.game.players.length) +
+                            local.game.players.length) %
+                            local.game.players.length
+                        ].steps.length - 1
+                      ].content
+                    : null,
+              }}
+              round={local.game.round}
+              totalRounds={local.game.totalRounds}
+              deadline={local.game.deadline}
+              activePlayer={local.game.players[local.game.cursor]}
+              onSubmit={local.submit}
+              onOpenRules={() => setShowRules(true)}
+              isMuted={isMuted}
+              isBgmOn={isBgmOn}
+              onToggleMute={handleToggleMute}
+              onToggleBgm={handleToggleBgm}
+            />
+          )}
+
+          {local.game.phase === 'REVEAL' && (
+            <RevealPresentation
+              booklets={local.game.booklets}
+              pos={local.game.reveal}
+              reactions={local.game.reactions}
+              onNav={local.setReveal}
+              onReact={local.react}
+              onPlayAgain={local.reset}
+              onOpenRules={() => setShowRules(true)}
+              isMuted={isMuted}
+              isBgmOn={isBgmOn}
+              onToggleMute={handleToggleMute}
+              onToggleBgm={handleToggleBgm}
+            />
+          )}
+        </>
+      )}
+
+      {/* 6. MAIN LOBBY (HOME) */}
+      {!isOnlineActive && !local.game && (
+        <Lobby
+          onStartPassAndPlay={(players, settings) => {
+            setMode('PASS_AND_PLAY');
+            local.start(players, settings);
+          }}
+          onCreateOnlineRoom={async (name, avatar) => {
+            setMode('ONLINE');
+            return online.createRoom(name, avatar);
+          }}
+          onJoinOnlineRoom={async (code, name, avatar) => {
+            setMode('ONLINE');
+            return online.joinRoom(code, name, avatar);
+          }}
+          onOpenRules={() => setShowRules(true)}
+          isMuted={isMuted}
+          isBgmOn={isBgmOn}
+          onToggleMute={handleToggleMute}
+          onToggleBgm={handleToggleBgm}
+          onlineError={online.error}
+          setOnlineError={online.setError}
+        />
+      )}
+
+      {/* Official Rules Modal */}
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
     </div>
   );
 };

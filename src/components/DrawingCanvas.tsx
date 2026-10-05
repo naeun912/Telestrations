@@ -8,7 +8,7 @@ import {
   Trash2, 
   Square, 
   Circle as CircleIcon, 
-  Minus, 
+  Minus,
   Grid
 } from 'lucide-react';
 import { soundFx } from '../utils/sound';
@@ -22,26 +22,24 @@ interface DrawingCanvasProps {
 }
 
 const PRESET_COLORS = [
-  '#000000', '#555555', '#888888', '#ffffff',
-  '#e63946', '#f4a261', '#e9c46a', '#2a9d8f',
-  '#264653', '#457b9d', '#6a0572', '#b5179e',
-  '#7f5539', '#fb8500', '#00b4d8', '#38b000'
+  '#1d1b3a', '#555555', '#ffffff', '#ff5a5f',
+  '#ff9f1c', '#ffd23f', '#5bd38a', '#2ec4b6',
+  '#3a86ff', '#8b5cf6', '#ff7eb6', '#7f5539'
 ];
 
-const STROKE_SIZES = [3, 8, 16, 28];
+const STROKE_SIZES = [4, 8, 16, 28];
 
 export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   onCanvasChange,
   disabled = false,
-  initialDataUrl
+  initialDataUrl,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [tool, setTool] = useState<Tool>('pencil');
-  const [color, setColor] = useState<string>('#000000');
+  const [color, setColor] = useState<string>('#1d1b3a');
   const [lineWidth, setLineWidth] = useState<number>(8);
-  const [showGrid, setShowGrid] = useState<boolean>(true);
+  const [showGrid, setShowGrid] = useState<boolean>(false);
 
-  // Undo / Redo history stacks
   const historyRef = useRef<ImageData[]>([]);
   const historyStepRef = useRef<number>(-1);
 
@@ -49,19 +47,16 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const startPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const snapshotRef = useRef<ImageData | null>(null);
 
-  // Initialize Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Set high resolution crisp canvas internal size
     canvas.width = 600;
     canvas.height = 450;
 
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
-    // White background fill
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -84,8 +79,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (!ctx) return;
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    
-    // Truncate redo stack
     historyRef.current = historyRef.current.slice(0, historyStepRef.current + 1);
     historyRef.current.push(imageData);
     historyStepRef.current = historyRef.current.length - 1;
@@ -103,7 +96,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
       ctx.putImageData(historyRef.current[historyStepRef.current], 0, 0);
-      soundFx.playClick();
+      soundFx.click();
       if (onCanvasChange) onCanvasChange(canvas.toDataURL('image/png'));
     }
   };
@@ -116,7 +109,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
       ctx.putImageData(historyRef.current[historyStepRef.current], 0, 0);
-      soundFx.playClick();
+      soundFx.click();
       if (onCanvasChange) onCanvasChange(canvas.toDataURL('image/png'));
     }
   };
@@ -129,7 +122,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     saveHistory();
-    soundFx.playClick();
+    soundFx.click();
   };
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
@@ -158,7 +151,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     };
   };
 
-  // Flood Fill Algorithm
   const floodFill = (startX: number, startY: number, fillColorHex: string) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -170,7 +162,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const imgData = ctx.getImageData(0, 0, width, height);
     const data = imgData.data;
 
-    // Convert hex color to RGBA
     const tempDiv = document.createElement('div');
     tempDiv.style.color = fillColorHex;
     document.body.appendChild(tempDiv);
@@ -190,7 +181,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const startB = data[startPos + 2];
     const startA = data[startPos + 3];
 
-    // Don't fill if same color
     if (startR === targetR && startG === targetG && startB === targetB && startA === targetA) {
       return;
     }
@@ -298,11 +288,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (tool === 'pencil' || tool === 'eraser') {
       ctx.lineTo(coords.x, coords.y);
       ctx.stroke();
-      if (Math.random() < 0.2) {
-        soundFx.playPencilScratch();
-      }
+      soundFx.scratch();
     } else if (snapshotRef.current) {
-      // For shapes (Line, Rect, Circle), restore snapshot to draw preview
       ctx.putImageData(snapshotRef.current, 0, 0);
       ctx.beginPath();
       ctx.strokeStyle = color;
@@ -335,13 +322,13 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   return (
     <div className="canvas-wrapper flex flex-col items-center gap-3 w-full max-w-[640px] mx-auto select-none">
-      {/* Canvas Area with Notebook Style */}
-      <div className="relative w-full rounded-2xl overflow-hidden shadow-2xl border-4 border-slate-700 bg-white group">
+      {/* Canvas Frame */}
+      <div className="canvas-wrap">
         {showGrid && (
           <div 
-            className="absolute inset-0 pointer-events-none opacity-15"
+            className="absolute inset-0 pointer-events-none opacity-20"
             style={{
-              backgroundImage: 'radial-gradient(#475569 1px, transparent 1px)',
+              backgroundImage: 'radial-gradient(#1d1b3a 1.5px, transparent 1.5px)',
               backgroundSize: '20px 20px'
             }}
           />
@@ -355,141 +342,139 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
-          className={`w-full aspect-[4/3] touch-none block ${disabled ? 'cursor-not-allowed opacity-90' : 'cursor-crosshair'}`}
+          className={tool === 'fill' ? 'is-fill' : ''}
         />
       </div>
 
       {/* Toolbar Controls */}
       {!disabled && (
-        <div className="toolbar bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-slate-700 shadow-xl w-full flex flex-col gap-3">
-          {/* Main Tool Pickers */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => { setTool('pencil'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'pencil' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="연필 브러시"
-              >
-                <Pencil size={20} />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTool('eraser'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'eraser' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="지우개"
-              >
-                <Eraser size={20} />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTool('fill'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'fill' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="페인트통 (채우기)"
-              >
-                <PaintBucket size={20} />
-              </button>
-              <div className="w-[1px] h-6 bg-slate-700 mx-1" />
-              <button
-                type="button"
-                onClick={() => { setTool('line'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'line' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="직선"
-              >
-                <Minus size={20} />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTool('rectangle'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'rectangle' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="사각형"
-              >
-                <Square size={20} />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTool('circle'); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${tool === 'circle' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
-                title="원"
-              >
-                <CircleIcon size={20} />
-              </button>
-            </div>
+        <div className="toolbar">
+          <div className="toolbar__row">
+            {/* Tools */}
+            <button
+              type="button"
+              className={`tool ${tool === 'pencil' ? 'is-on' : ''}`}
+              onClick={() => { setTool('pencil'); soundFx.click(); }}
+              title="마커 펜"
+            >
+              <Pencil size={20} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${tool === 'eraser' ? 'is-on' : ''}`}
+              onClick={() => { setTool('eraser'); soundFx.click(); }}
+              title="지우개"
+            >
+              <Eraser size={20} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${tool === 'fill' ? 'is-on' : ''}`}
+              onClick={() => { setTool('fill'); soundFx.click(); }}
+              title="페인트통 (채우기)"
+            >
+              <PaintBucket size={20} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${tool === 'line' ? 'is-on' : ''}`}
+              onClick={() => { setTool('line'); soundFx.click(); }}
+              title="직선"
+            >
+              <Minus size={20} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${tool === 'rectangle' ? 'is-on' : ''}`}
+              onClick={() => { setTool('rectangle'); soundFx.click(); }}
+              title="사각형"
+            >
+              <Square size={20} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${tool === 'circle' ? 'is-on' : ''}`}
+              onClick={() => { setTool('circle'); soundFx.click(); }}
+              title="원"
+            >
+              <CircleIcon size={20} />
+            </button>
 
-            {/* Stroke Width Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 rounded-xl">
-              {STROKE_SIZES.map((sz) => (
-                <button
-                  key={sz}
-                  type="button"
-                  onClick={() => { setLineWidth(sz); soundFx.playClick(); }}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${lineWidth === sz ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                  title={`두께 ${sz}px`}
-                >
-                  <span 
-                    className="rounded-full bg-current" 
-                    style={{ width: `${Math.min(sz + 2, 16)}px`, height: `${Math.min(sz + 2, 16)}px` }}
-                  />
-                </button>
-              ))}
-            </div>
+            <div style={{ width: 1, height: 28, background: 'var(--ink)', opacity: 0.3 }} />
 
-            {/* Actions: Undo / Redo / Grid / Clear */}
-            <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl">
+            {/* Sizes */}
+            {STROKE_SIZES.map((sz) => (
               <button
+                key={sz}
                 type="button"
-                onClick={undo}
-                disabled={historyStepRef.current <= 0}
-                className="p-2 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                title="실행 취소 (Undo)"
+                className={`tool ${lineWidth === sz ? 'is-on' : ''}`}
+                onClick={() => { setLineWidth(sz); soundFx.click(); }}
+                title={`두께 ${sz}px`}
+                style={{ padding: '0 8px', minWidth: 38 }}
               >
-                <RotateCcw size={18} />
+                <span 
+                  className="size-dot" 
+                  style={{ width: Math.min(sz + 2, 18), height: Math.min(sz + 2, 18) }} 
+                />
               </button>
-              <button
-                type="button"
-                onClick={redo}
-                disabled={historyStepRef.current >= historyRef.current.length - 1}
-                className="p-2 rounded-lg text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                title="다시 실행 (Redo)"
-              >
-                <RotateCw size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowGrid(!showGrid); soundFx.playClick(); }}
-                className={`p-2 rounded-lg transition-all ${showGrid ? 'text-amber-400' : 'text-slate-500'}`}
-                title="눈금 모눈종이 토글"
-              >
-                <Grid size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={clearCanvas}
-                className="p-2 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-all"
-                title="전체 지우기"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
+            ))}
+
+            <div style={{ width: 1, height: 28, background: 'var(--ink)', opacity: 0.3 }} />
+
+            {/* Actions */}
+            <button
+              type="button"
+              className="tool"
+              onClick={undo}
+              disabled={historyStepRef.current <= 0}
+              title="실행 취소"
+            >
+              <RotateCcw size={18} />
+            </button>
+            <button
+              type="button"
+              className="tool"
+              onClick={redo}
+              disabled={historyStepRef.current >= historyRef.current.length - 1}
+              title="다시 실행"
+            >
+              <RotateCw size={18} />
+            </button>
+            <button
+              type="button"
+              className={`tool ${showGrid ? 'is-on' : ''}`}
+              onClick={() => { setShowGrid(!showGrid); soundFx.click(); }}
+              title="모눈종이 가이드 토글"
+            >
+              <Grid size={18} />
+            </button>
+            <button
+              type="button"
+              className="tool"
+              onClick={clearCanvas}
+              title="전체 지우기"
+              style={{ color: 'var(--red)' }}
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
 
-          {/* Color Palette Grid */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 scrollbar-none">
+          {/* Marker Colors */}
+          <div className="markers">
             {PRESET_COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
-                onClick={() => { 
-                  setColor(c); 
+                className={`marker ${color === c && tool !== 'eraser' ? 'is-on' : ''}`}
+                onClick={() => {
+                  setColor(c);
                   if (tool === 'eraser') setTool('pencil');
-                  soundFx.playClick(); 
+                  soundFx.click();
                 }}
-                className={`w-7 h-7 rounded-full shrink-0 transition-transform ${color === c && tool !== 'eraser' ? 'ring-2 ring-white scale-110 shadow-lg' : 'hover:scale-105 opacity-90'}`}
-                style={{ backgroundColor: c, border: c === '#ffffff' ? '1px solid #475569' : 'none' }}
+                style={{ '--c': c } as React.CSSProperties}
               />
             ))}
-            {/* Custom Hex Color Picker */}
-            <div className="relative shrink-0 w-7 h-7 rounded-full overflow-hidden border border-slate-600 flex items-center justify-center cursor-pointer">
+            <button className="marker marker--custom" title="팔레트 색상 직접 선택">
               <input
                 type="color"
                 value={color}
@@ -497,10 +482,8 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                   setColor(e.target.value);
                   if (tool === 'eraser') setTool('pencil');
                 }}
-                className="absolute -inset-2 w-12 h-12 cursor-pointer opacity-0"
               />
-              <span className="text-[10px] font-bold text-white pointer-events-none">🎨</span>
-            </div>
+            </button>
           </div>
         </div>
       )}

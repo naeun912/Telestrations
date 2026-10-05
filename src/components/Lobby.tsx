@@ -9,450 +9,443 @@ import {
   Play, 
   CheckCircle2, 
   HelpCircle,
-  Volume2,
-  VolumeX,
   Clock,
-  Layers
+  Layers,
+  Dices
 } from 'lucide-react';
-import { GameMode, Player, RoomSettings } from '../types/game';
-import { WORD_CATEGORIES } from '../data/words';
+import { Player, Settings } from '../types/game';
+import { WORD_CATEGORIES, TOTAL_WORD_COUNT, parseCustomWords } from '../data/words';
+import { isOdd, totalRoundsFor } from '../game/logic';
+import { AVATARS, randomAvatar } from '../utils/players';
 import { soundFx } from '../utils/sound';
-
-const EMOJI_AVATARS = [
-  '🐶', '🐱', '🦊', '🐸', '🦄', '🐼', '🐯', '🤖',
-  '👽', '💩', '🤡', '🎃', '👻', '🥑', '🍕', '🚀',
-  '👑', '🐙', '🦖', '🎨', '🔥', '⚡', '🌈', '💎'
-];
+import { Header } from './Header';
 
 interface LobbyProps {
-  onStartPassAndPlay: (players: Player[], settings: RoomSettings) => void;
-  onJoinOnlineRoom: (playerName: string, avatar: string, roomId?: string) => void;
+  onStartPassAndPlay: (players: Player[], settings: Settings) => void;
+  onCreateOnlineRoom: (name: string, avatar: string) => Promise<boolean>;
+  onJoinOnlineRoom: (code: string, name: string, avatar: string) => Promise<boolean>;
+  onOpenRules: () => void;
   isMuted: boolean;
+  isBgmOn: boolean;
   onToggleMute: () => void;
+  onToggleBgm: () => void;
+  onlineError?: string;
+  setOnlineError?: (err: string) => void;
 }
 
 export const Lobby: React.FC<LobbyProps> = ({
   onStartPassAndPlay,
+  onCreateOnlineRoom,
   onJoinOnlineRoom,
+  onOpenRules,
   isMuted,
+  isBgmOn,
   onToggleMute,
+  onToggleBgm,
+  onlineError,
+  setOnlineError,
 }) => {
-  const [mode, setMode] = useState<GameMode>('PASS_AND_PLAY');
-  const [playerName, setPlayerName] = useState<string>('그림왕');
-  const [avatar, setAvatar] = useState<string>(EMOJI_AVATARS[0]);
-  const [roomIdInput, setRoomIdInput] = useState<string>('');
+  const [tab, setTab] = useState<'PASS_AND_PLAY' | 'ONLINE'>('PASS_AND_PLAY');
 
-  // Pass & Play Local Players state
+  // Player Profile
+  const [name, setName] = useState<string>('그림왕');
+  const [avatar, setAvatar] = useState<string>(AVATARS[0]);
+
+  // Online Room Code
+  const [roomCode, setRoomCode] = useState<string>('');
+
+  // Local Players List
   const [localPlayers, setLocalPlayers] = useState<Player[]>([
-    { id: '1', name: '플레이어 1', avatar: '🐶', isHost: true, isReady: true, hasSubmittedCurrentStep: false },
-    { id: '2', name: '플레이어 2', avatar: '🐱', isHost: false, isReady: true, hasSubmittedCurrentStep: false },
-    { id: '3', name: '플레이어 3', avatar: '🦊', isHost: false, isReady: true, hasSubmittedCurrentStep: false },
-    { id: '4', name: '플레이어 4', avatar: '🐸', isHost: false, isReady: true, hasSubmittedCurrentStep: false },
+    { id: '1', name: '플레이어 1', avatar: '🐶' },
+    { id: '2', name: '플레이어 2', avatar: '🐱' },
+    { id: '3', name: '플레이어 3', avatar: '🦊' },
+    { id: '4', name: '플레이어 4', avatar: '🐸' },
   ]);
   const [newPlayerName, setNewPlayerName] = useState<string>('');
 
-  // Room Settings
+  // Settings
   const [category, setCategory] = useState<string>('easy');
-  const [timeLimit, setTimeLimit] = useState<number>(60);
+  const [drawTime, setDrawTime] = useState<number>(60);
+  const [guessTime, setGuessTime] = useState<number>(30);
   const [customWordsText, setCustomWordsText] = useState<string>('');
-  const [showRuleModal, setShowRuleModal] = useState<boolean>(false);
 
-  const isOddPlayerCount = localPlayers.length % 2 !== 0;
+  const numLocalPlayers = localPlayers.length;
+  const localIsOdd = isOdd(numLocalPlayers);
+  const localRounds = totalRoundsFor(numLocalPlayers);
 
   const handleAddLocalPlayer = () => {
     if (localPlayers.length >= 10) return;
-    const name = newPlayerName.trim() || `플레이어 ${localPlayers.length + 1}`;
-    const randomAvatar = EMOJI_AVATARS[localPlayers.length % EMOJI_AVATARS.length];
-    
-    setLocalPlayers(prev => [
+    const pName = newPlayerName.trim() || `플레이어 ${localPlayers.length + 1}`;
+    setLocalPlayers((prev) => [
       ...prev,
       {
         id: String(Date.now()),
-        name,
-        avatar: randomAvatar,
-        isHost: false,
-        isReady: true,
-        hasSubmittedCurrentStep: false
-      }
+        name: pName,
+        avatar: randomAvatar(),
+      },
     ]);
     setNewPlayerName('');
-    soundFx.playClick();
+    soundFx.click();
   };
 
   const handleRemoveLocalPlayer = (id: string) => {
-    if (localPlayers.length <= 3) return; // minimum 3 players for telestrations
-    setLocalPlayers(prev => prev.filter(p => p.id !== id));
-    soundFx.playClick();
+    if (localPlayers.length <= 3) return;
+    setLocalPlayers((prev) => prev.filter((p) => p.id !== id));
+    soundFx.click();
   };
 
   const handleStartPassAndPlay = () => {
-    soundFx.playClick();
-    const customWords = customWordsText
-      .split(',')
-      .map(w => w.trim())
-      .filter(w => w.length > 0);
-
+    soundFx.pop();
+    const customWords = parseCustomWords(customWordsText);
     onStartPassAndPlay(localPlayers, {
       category,
-      timeLimit,
-      customWords
+      drawTime,
+      guessTime,
+      customWords,
     });
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col items-center gap-6 p-4 sm:p-6 animate-fadeIn select-none">
-      {/* Top Header & Mute Button */}
-      <div className="w-full flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-3xl">✏️</span>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            텔레스트레이션 <span className="text-indigo-400">온라인</span>
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowRuleModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs sm:text-sm border border-slate-700 transition-all"
-          >
-            <HelpCircle size={16} />
-            <span>공식 규칙</span>
-          </button>
-          <button
-            type="button"
-            onClick={onToggleMute}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
-            title={isMuted ? '음소거 해제' : '음소거'}
-          >
-            {isMuted ? <VolumeX size={18} className="text-rose-400" /> : <Volume2 size={18} className="text-emerald-400" />}
-          </button>
-        </div>
-      </div>
+    <div className="screen animate-fadeIn">
+      <Header
+        onOpenRules={onOpenRules}
+        isMuted={isMuted}
+        isBgmOn={isBgmOn}
+        onToggleMute={onToggleMute}
+        onToggleBgm={onToggleBgm}
+      />
 
-      {/* Main Banner Hero */}
-      <div className="w-full bg-gradient-to-r from-indigo-900/60 via-purple-900/60 to-pink-900/60 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center gap-3 backdrop-blur-md">
-        <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-extrabold border border-indigo-500/30">
-          <Sparkles size={14} />
-          그림과 단어로 전달하는 유쾌한 수건돌리기 릴레이!
-        </span>
-        <h2 className="text-3xl sm:text-4xl font-black text-white">
-          원래 단어는 어디로 사라졌을까? 🎨
-        </h2>
-        <p className="text-slate-300 text-sm sm:text-base max-w-xl">
-          친구들과 그림을 그리고 추측 단어를 넘겨주세요.<br />
-          마지막에 공개되는 황당한 결과에 배꼽을 잡게 됩니다!
+      {/* Hero Header */}
+      <div className="hero center">
+        <div className="hero__tag pill pill--even">
+          <Sparkles size={16} /> 그림으로 전하는 수건돌리기 파티 보드게임!
+        </div>
+
+        {/* Telestrations Animated Chain Demo */}
+        <div className="chain-demo">
+          <div className="chain-demo__page">
+            <small>제시어</small>
+            <b>피카츄</b>
+          </div>
+          <span className="chain-demo__arrow">➔</span>
+          <div className="chain-demo__page">
+            <small>그림</small>
+            <b>🎨</b>
+          </div>
+          <span className="chain-demo__arrow">➔</span>
+          <div className="chain-demo__page">
+            <small>추측</small>
+            <b>노란쥐</b>
+          </div>
+          <span className="chain-demo__arrow">➔</span>
+          <div className="chain-demo__page">
+            <small>최종</small>
+            <b>햄스터</b>
+          </div>
+        </div>
+
+        <p className="muted small">
+          주어진 제시어를 그리고 릴레이로 전달하세요.<br />
+          스케치북이 원래 주인에게 돌아오면 웃음 폭발 결과가 펼쳐집니다! (총 {TOTAL_WORD_COUNT}+ 단어 포함)
         </p>
       </div>
 
-      {/* Game Mode Tab Selector */}
-      <div className="w-full grid grid-cols-2 gap-3 bg-slate-900/80 p-2 rounded-2xl border border-slate-800 shadow-lg">
-        <button
-          type="button"
-          onClick={() => { setMode('PASS_AND_PLAY'); soundFx.playClick(); }}
-          className={`flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base transition-all ${
-            mode === 'PASS_AND_PLAY'
-              ? 'bg-gradient-to-r from-indigo-600 to-pink-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
+      {/* Mode Selector Cards */}
+      <div className="mode-grid">
+        <div
+          className={`mode-card mode-card--yellow ${tab === 'PASS_AND_PLAY' ? 'card--yellow' : ''}`}
+          onClick={() => {
+            setTab('PASS_AND_PLAY');
+            soundFx.click();
+          }}
+          style={{
+            transform: tab === 'PASS_AND_PLAY' ? 'translate(-2px, -3px) rotate(-1deg)' : 'none',
+            borderColor: tab === 'PASS_AND_PLAY' ? 'var(--ink)' : 'var(--ink-soft)',
+          }}
         >
-          <Smartphone size={20} />
-          <span>한 기기 모드 (Pass & Play)</span>
-        </button>
+          <div className="mode-card__icon">📱</div>
+          <h2 className="mode-card__title">한 기기로 같이 하기</h2>
+          <p className="mode-card__desc">
+            노트북, 태블릿, PC 1대로 친구들과 돌아가며 스케치북을 넘겨요! (비밀 가림막 지원)
+          </p>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => { setMode('ONLINE'); soundFx.playClick(); }}
-          className={`flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base transition-all ${
-            mode === 'ONLINE'
-              ? 'bg-gradient-to-r from-indigo-600 to-pink-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
+        <div
+          className={`mode-card mode-card--teal ${tab === 'ONLINE' ? 'card--teal' : ''}`}
+          onClick={() => {
+            setTab('ONLINE');
+            soundFx.click();
+          }}
+          style={{
+            transform: tab === 'ONLINE' ? 'translate(-2px, -3px) rotate(1deg)' : 'none',
+            borderColor: tab === 'ONLINE' ? 'var(--ink)' : 'var(--ink-soft)',
+          }}
         >
-          <Globe size={20} />
-          <span>실시간 멀티플레이 (온라인)</span>
-        </button>
+          <div className="mode-card__icon">🌐</div>
+          <h2 className="mode-card__title">실시간 멀티플레이</h2>
+          <p className="mode-card__desc">
+            각자 스마트폰/PC에서 4자리 방 코드로 접속하여 동시에 그리기 & 맞히기!
+          </p>
+        </div>
       </div>
 
-      {/* Mode Content: PASS AND PLAY */}
-      {mode === 'PASS_AND_PLAY' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
-          {/* Player List Setup */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="text-indigo-400" size={20} />
-                <span>참가 플레이어 ({localPlayers.length}명)</span>
-              </h3>
-              <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
-                isOddPlayerCount 
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' 
-                  : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
-              }`}>
-                {isOddPlayerCount ? '⚡ 홀수 인원 (1R 제시어 바로 전달)' : '✨ 짝수 인원 (1R 내 그림 그리기)'}
-              </span>
-            </div>
+      {/* PASS AND PLAY CONTENT */}
+      {tab === 'PASS_AND_PLAY' && (
+        <div className="card stack">
+          <div className="row row--between">
+            <h3 className="card__title" style={{ margin: 0 }}>
+              <Users size={22} className="text-teal" />
+              <span>참가 플레이어 ({numLocalPlayers}명)</span>
+            </h3>
+            <span className={`pill ${localIsOdd ? 'pill--odd' : 'pill--even'}`}>
+              {localIsOdd ? `⚡ 홀수 인원 (${localRounds}R)` : `✨ 짝수 인원 (${localRounds}R)`}
+            </span>
+          </div>
 
-            {/* Players Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-              {localPlayers.map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-slate-800 border border-slate-700 p-3 rounded-2xl flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <span className="text-2xl shrink-0">{p.avatar}</span>
-                    <span className="font-bold text-white text-sm truncate">{p.name}</span>
-                  </div>
-                  {localPlayers.length > 3 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLocalPlayer(p.id)}
-                      className="text-slate-500 hover:text-rose-400 p-1 transition-colors"
-                      title="삭제"
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Add Player Input */}
-            {localPlayers.length < 10 && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newPlayerName}
-                  onChange={(e) => setNewPlayerName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddLocalPlayer()}
-                  placeholder="플레이어 이름 입력..."
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddLocalPlayer}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl flex items-center gap-1.5 transition-all"
-                >
-                  <Plus size={18} />
-                  <span>추가</span>
-                </button>
-              </div>
+          <div className="notice notice--odd">
+            {localIsOdd ? (
+              <b>⭐ 홀수 인원 룰: 1라운드에 그림을 그리지 않고 제시어를 바로 옆 사람에게 전달합니다! (총 {localRounds}라운드)</b>
+            ) : (
+              <b>✨ 짝수 인원 룰: 1라운드에 자신의 제시어 첫 그림을 그린 후 전달합니다! (총 {localRounds}라운드)</b>
             )}
           </div>
 
-          {/* Game Settings */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-800 pt-5">
-            {/* Word Category */}
-            <div>
-              <label className="block text-sm font-bold text-slate-300 mb-2 flex items-center gap-1.5">
-                <Layers size={16} className="text-indigo-400" />
-                <span>제시어 카테고리</span>
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm font-bold focus:outline-none focus:border-indigo-500"
-              >
-                {WORD_CATEGORIES.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.emoji} {cat.name} ({cat.words.length}개)
-                  </option>
-                ))}
-                <option value="all">🎲 전체 섞기</option>
-                <option value="custom">✏️ 직접 단어 입력</option>
-              </select>
-            </div>
-
-            {/* Turn Timer */}
-            <div>
-              <label className="block text-sm font-bold text-slate-300 mb-2 flex items-center gap-1.5">
-                <Clock size={16} className="text-indigo-400" />
-                <span>라운드 제한시간</span>
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {[30, 60, 90, 120].map((sec) => (
+          {/* Players Grid */}
+          <div className="player-grid">
+            {localPlayers.map((p) => (
+              <div key={p.id} className="player-tag">
+                <span className="avatar avatar--sm">{p.avatar}</span>
+                <span className="player-tag__name font-bold">{p.name}</span>
+                {localPlayers.length > 3 && (
                   <button
-                    key={sec}
                     type="button"
-                    onClick={() => setTimeLimit(sec)}
-                    className={`py-2.5 rounded-xl font-extrabold text-sm border transition-all ${
-                      timeLimit === sec
-                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-md'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                    className="icon-btn"
+                    style={{ width: 30, height: 30, fontSize: '0.9rem' }}
+                    onClick={() => handleRemoveLocalPlayer(p.id)}
+                    title="삭제"
                   >
-                    {sec}초
+                    <X size={14} />
                   </button>
-                ))}
+                )}
               </div>
-            </div>
+            ))}
           </div>
 
-          {/* Custom Words Entry */}
-          {category === 'custom' && (
-            <div className="border-t border-slate-800 pt-4">
-              <label className="block text-sm font-bold text-slate-300 mb-1">
-                커스텀 단어들 (쉼표로 구분)
-              </label>
+          {/* Add Player Row */}
+          {localPlayers.length < 10 && (
+            <div className="row">
               <input
                 type="text"
-                value={customWordsText}
-                onChange={(e) => setCustomWordsText(e.target.value)}
-                placeholder="예: 민트초코, 파인애플피자, 수건돌리기, 감자튀김"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="input"
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddLocalPlayer()}
+                placeholder="새 플레이어 이름..."
               />
+              <button
+                type="button"
+                className="btn btn--blue shrink-0"
+                onClick={handleAddLocalPlayer}
+              >
+                <Plus size={18} /> 추가
+              </button>
             </div>
           )}
 
-          {/* Start Game Button */}
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={handleStartPassAndPlay}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-extrabold text-xl shadow-xl shadow-indigo-500/25 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-3 cursor-pointer"
-            >
-              <Play size={24} className="fill-current" />
-              <span>텔레스트레이션 시작하기!</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Mode Content: ONLINE MULTIPLAYER */}
-      {mode === 'ONLINE' && (
-        <div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Globe className="text-indigo-400" size={20} />
-              <span>온라인 캐릭터 & 닉네임 설정</span>
-            </h3>
-
-            {/* Avatar Selector */}
+          {/* Settings Panel */}
+          <div className="stack" style={{ borderTop: '3px dashed var(--ink)', paddingTop: 16 }}>
             <div>
-              <span className="text-xs font-bold text-slate-400 block mb-2">아바타 선택</span>
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-                {EMOJI_AVATARS.map((av) => (
+              <span className="field__label"><b>제시어 카테고리</b></span>
+              <div className="cat-grid">
+                {WORD_CATEGORIES.map((cat) => (
                   <button
-                    key={av}
+                    key={cat.id}
                     type="button"
-                    onClick={() => setAvatar(av)}
-                    className={`w-11 h-11 rounded-2xl text-2xl flex items-center justify-center shrink-0 border transition-all ${
-                      avatar === av
-                        ? 'bg-indigo-600/30 border-indigo-500 scale-110 shadow-lg'
-                        : 'bg-slate-800 border-slate-700 hover:border-slate-500'
-                    }`}
+                    className={`cat ${category === cat.id ? 'is-on' : ''}`}
+                    onClick={() => {
+                      setCategory(cat.id);
+                      soundFx.click();
+                    }}
                   >
-                    {av}
+                    <span className="cat__name">{cat.emoji} {cat.name}</span>
+                    <span className="cat__desc">{cat.desc} ({cat.words.length}개)</span>
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* Nickname Input */}
-            <div>
-              <span className="text-xs font-bold text-slate-400 block mb-1">닉네임</span>
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={12}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm font-bold focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-800 pt-5">
-            {/* Create Room */}
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between gap-4">
-              <div>
-                <h4 className="font-extrabold text-white text-base mb-1">새 게임 방 만들기</h4>
-                <p className="text-slate-400 text-xs">방장이 되어 친구들을 초대하고 제시어 카테고리를 설정하세요.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onJoinOnlineRoom(playerName, avatar)}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
-              >
-                <Plus size={18} />
-                <span>새 방 생성</span>
-              </button>
-            </div>
-
-            {/* Join Room */}
-            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between gap-4">
-              <div>
-                <h4 className="font-extrabold text-white text-base mb-1">참가 코드로 입장</h4>
-                <p className="text-slate-400 text-xs">방장에게 전달받은 4자리 방 코드를 입력하세요.</p>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={roomIdInput}
-                  onChange={(e) => setRoomIdInput(e.target.value.toUpperCase())}
-                  maxLength={4}
-                  placeholder="방 코드 (예: ABCD)"
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center font-bold tracking-widest text-sm focus:outline-none focus:border-indigo-500"
-                />
                 <button
                   type="button"
-                  onClick={() => roomIdInput && onJoinOnlineRoom(playerName, avatar, roomIdInput)}
-                  disabled={!roomIdInput}
-                  className="px-4 py-2 bg-pink-600 hover:bg-pink-500 disabled:opacity-40 text-white font-extrabold text-sm rounded-xl transition-all flex items-center gap-1.5"
+                  className={`cat ${category === 'all' ? 'is-on' : ''}`}
+                  onClick={() => {
+                    setCategory('all');
+                    soundFx.click();
+                  }}
                 >
-                  <CheckCircle2 size={18} />
-                  <span>입장</span>
+                  <span className="cat__name">🎲 전체 섞기</span>
+                  <span className="cat__desc">모든 카테고리 포함 ({TOTAL_WORD_COUNT}개)</span>
+                </button>
+                <button
+                  type="button"
+                  className={`cat ${category === 'custom' ? 'is-on' : ''}`}
+                  onClick={() => {
+                    setCategory('custom');
+                    soundFx.click();
+                  }}
+                >
+                  <span className="cat__name">✏️ 직접 입력</span>
+                  <span className="cat__desc">나만의 제시어 등록</span>
                 </button>
               </div>
             </div>
+
+            {category === 'custom' && (
+              <div>
+                <span className="field__label"><b>커스텀 제시어 (쉼표 또는 줄바꿈으로 구분)</b></span>
+                <textarea
+                  className="textarea"
+                  value={customWordsText}
+                  onChange={(e) => setCustomWordsText(e.target.value)}
+                  placeholder="예: 민트초코, 파인애플피자, 수건돌리기, 감자튀김"
+                />
+              </div>
+            )}
+
+            <div className="row row--wrap" style={{ gap: 20 }}>
+              <div>
+                <span className="field__label"><b>그리기 시간</b></span>
+                <div className="chips">
+                  {[30, 45, 60, 90, 120].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      className={`chip ${drawTime === sec ? 'is-on' : ''}`}
+                      onClick={() => {
+                        setDrawTime(sec);
+                        soundFx.click();
+                      }}
+                    >
+                      {sec}초
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="field__label"><b>맞히기 시간</b></span>
+                <div className="chips">
+                  {[15, 20, 30, 45, 60].map((sec) => (
+                    <button
+                      key={sec}
+                      type="button"
+                      className={`chip ${guessTime === sec ? 'is-on' : ''}`}
+                      onClick={() => {
+                        setGuessTime(sec);
+                        soundFx.click();
+                      }}
+                    >
+                      {sec}초
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
+
+          <button
+            type="button"
+            className="btn btn--yellow btn--lg btn--block"
+            onClick={handleStartPassAndPlay}
+            style={{ marginTop: 12 }}
+          >
+            <Play size={24} className="fill-current" />
+            <span>텔레스트레이션 시작하기!</span>
+          </button>
         </div>
       )}
 
-      {/* Official Rule Modal */}
-      {showRuleModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative">
-            <button
-              type="button"
-              onClick={() => setShowRuleModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1"
-            >
-              <X size={20} />
-            </button>
+      {/* ONLINE MULTIPLAYER CONTENT */}
+      {tab === 'ONLINE' && (
+        <div className="card stack">
+          {/* Profile Picker */}
+          <div className="stack">
+            <span className="field__label"><b>내 캐릭터 & 닉네임 설정</b></span>
+            <div className="row">
+              <span className="avatar avatar--lg">{avatar}</span>
+              <input
+                type="text"
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={10}
+                placeholder="닉네임 입력..."
+              />
+            </div>
+            <div className="avatar-pick">
+              {AVATARS.map((av) => (
+                <button
+                  key={av}
+                  type="button"
+                  className={avatar === av ? 'is-on' : ''}
+                  onClick={() => {
+                    setAvatar(av);
+                    soundFx.click();
+                  }}
+                >
+                  {av}
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <h3 className="text-2xl font-black text-white flex items-center gap-2">
-              <Sparkles className="text-amber-400" size={24} />
-              <span>텔레스트레이션 공식 룰 안내</span>
-            </h3>
+          {onlineError && (
+            <div className="notice notice--warn">
+              {onlineError}
+            </div>
+          )}
 
-            <div className="space-y-3 text-sm text-slate-300 leading-relaxed max-h-[60vh] overflow-y-auto pr-2">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <strong className="text-indigo-400 block mb-1">1. 게임의 기본 흐름</strong>
-                제시어 ➔ 그림 그리기 ➔ 그림 보고 추측 단어 쓰기 ➔ 단어 보고 그림 그리기 ➔ 반복!
-              </div>
-
-              <div className="p-3 bg-slate-950 rounded-xl border border-amber-500/30">
-                <strong className="text-amber-300 block mb-1">2. 짝수 vs 홀수 인원 전달 룰 차이 ⭐</strong>
-                스케치북이 원래 주인에게 돌아왔을 때 마지막 결과가 **'추측(단어)'**으로 끝나도록 라운드가 조정됩니다.
-                <ul className="list-disc list-inside mt-2 space-y-1 text-xs">
-                  <li><strong className="text-white">짝수 인원 (4, 6, 8명):</strong> 1라운드에 **자신이 제시어 첫 그림**을 그린 후 다음 사람에게 전달합니다.</li>
-                  <li><strong className="text-amber-300">홀수 인원 (3, 5, 7명):</strong> 1라운드에 **그림을 그리지 않고 제시어를 바로 옆사람에게 전달**합니다! 옆사람이 첫 그림을 그리게 됩니다.</li>
-                </ul>
-              </div>
-
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <strong className="text-pink-400 block mb-1">3. 공개 및 발표 시간</strong>
-                모든 라운드가 끝나면 첫 제시어부터 마지막 추측까지 스케치북이 어떻게 웃기게 변질되었는지 결과를 감상하고 투표합니다!
-              </div>
+          <div className="mode-grid" style={{ marginTop: 10 }}>
+            <div className="card card--yellow stack center">
+              <h4>새 게임 방 만들기</h4>
+              <p className="muted small">방장이 되어 친구들을 초대하세요.</p>
+              <button
+                type="button"
+                className="btn btn--blue btn--block"
+                onClick={async () => {
+                  soundFx.click();
+                  const ok = await onCreateOnlineRoom(name, avatar);
+                  if (!ok && setOnlineError) {
+                    setOnlineError('방 생성 실패. 잠시 후 다시 시도해 주세요.');
+                  }
+                }}
+              >
+                <Plus size={20} /> 방 만들기
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowRuleModal(false)}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-xl transition-all"
-            >
-              확인했습니다!
-            </button>
+            <div className="card card--teal stack center">
+              <h4>참가 코드로 입장</h4>
+              <p className="muted small">방장에게 전해 들은 4자리 코드 입력</p>
+              <input
+                type="text"
+                className="input input--code"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                maxLength={4}
+                placeholder="ABCD"
+              />
+              <button
+                type="button"
+                className="btn btn--yellow btn--block"
+                disabled={roomCode.length < 4}
+                onClick={async () => {
+                  soundFx.click();
+                  const ok = await onJoinOnlineRoom(roomCode, name, avatar);
+                  if (!ok && setOnlineError) {
+                    setOnlineError('방 입장 실패. 방 코드를 확인해 주세요.');
+                  }
+                }}
+              >
+                <CheckCircle2 size={20} /> 참가하기
+              </button>
+            </div>
           </div>
         </div>
       )}

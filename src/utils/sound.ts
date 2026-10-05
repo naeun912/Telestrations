@@ -1,176 +1,177 @@
-// Web Audio API Sound Synthesizer for Telestrations Game
+// Web Audio API 로 직접 만든 효과음 + 잔잔한 BGM (외부 음원 파일 없음)
+
+const LS_MUTE = 'tele_mute';
+const LS_BGM = 'tele_bgm';
 
 class SoundManager {
   private ctx: AudioContext | null = null;
-  private isMuted: boolean = false;
+  private muted = localStorage.getItem(LS_MUTE) === '1';
+  private bgmOn = localStorage.getItem(LS_BGM) === '1';
+  private bgmTimer: number | null = null;
+  private bgmStep = 0;
+  private lastScratch = 0;
 
-  private getContext(): AudioContext | null {
-    if (this.isMuted) return null;
+  private ac(): AudioContext | null {
     if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AudioCtx) {
-        this.ctx = new AudioCtx();
-      }
+      const Ctor =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return null;
+      this.ctx = new Ctor();
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
+    if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
   }
 
-  public toggleMute(): boolean {
-    this.isMuted = !this.isMuted;
-    return this.isMuted;
+  isMuted() {
+    return this.muted;
+  }
+  isBgmOn() {
+    return this.bgmOn;
   }
 
-  public getMuteState(): boolean {
-    return this.isMuted;
+  toggleMute(): boolean {
+    this.muted = !this.muted;
+    localStorage.setItem(LS_MUTE, this.muted ? '1' : '0');
+    if (this.muted) this.stopBgmLoop();
+    else if (this.bgmOn) this.startBgmLoop();
+    return this.muted;
   }
 
-  // Button Click Sound
-  public playClick() {
-    const ctx = this.getContext();
+  toggleBgm(): boolean {
+    this.bgmOn = !this.bgmOn;
+    localStorage.setItem(LS_BGM, this.bgmOn ? '1' : '0');
+    if (this.bgmOn && !this.muted) this.startBgmLoop();
+    else this.stopBgmLoop();
+    return this.bgmOn;
+  }
+
+  /** 사용자 첫 클릭 이후 BGM 자동 재생 복구 */
+  resumeBgmIfNeeded() {
+    if (this.bgmOn && !this.muted && this.bgmTimer === null) this.startBgmLoop();
+  }
+
+  private tone(freq: number, start: number, dur: number, type: OscillatorType, vol: number, slideTo?: number) {
+    const ctx = this.ac();
     if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(600, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.05);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.05);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, start + dur);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(vol, start + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
   }
 
-  // Pencil Scratching Sound while drawing
-  public playPencilScratch() {
-    const ctx = this.getContext();
+  private noise(start: number, dur: number, vol: number, f0: number, f1: number, type: BiquadFilterType) {
+    const ctx = this.ac();
     if (!ctx) return;
-    const bufferSize = ctx.sampleRate * 0.05; // 50ms buffer
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * 0.1;
-    }
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-
+    const size = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, size, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
     const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1500 + Math.random() * 1000, ctx.currentTime);
-    filter.Q.setValueAtTime(3, ctx.currentTime);
-
+    filter.type = type;
+    filter.frequency.setValueAtTime(f0, start);
+    filter.frequency.exponentialRampToValueAtTime(f1, start + dur);
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    noise.start();
+    gain.gain.setValueAtTime(vol, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.start(start);
   }
 
-  // Page Flip Sound (Passing Booklet)
-  public playPageFlip() {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    const now = ctx.currentTime;
+  click() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (ctx) this.tone(620, ctx.currentTime, 0.07, 'sine', 0.15, 320);
+  }
 
-    const bufferSize = ctx.sampleRate * 0.15;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+  pop() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (ctx) this.tone(380, ctx.currentTime, 0.12, 'triangle', 0.22, 760);
+  }
+
+  /** 마커로 그리는 소리 (너무 자주 울리지 않도록 제한) */
+  scratch() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (!ctx) return;
+    const now = performance.now();
+    if (now - this.lastScratch < 70) return;
+    this.lastScratch = now;
+    this.noise(ctx.currentTime, 0.06, 0.05, 1800 + Math.random() * 900, 900, 'bandpass');
+  }
+
+  flip() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (ctx) this.noise(ctx.currentTime, 0.16, 0.2, 700, 3200, 'lowpass');
+  }
+
+  tick(urgent = false) {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (ctx) this.tone(urgent ? 920 : 520, ctx.currentTime, 0.07, 'triangle', urgent ? 0.25 : 0.12);
+  }
+
+  whistle() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (!ctx) return;
+    this.tone(900, ctx.currentTime, 0.12, 'sine', 0.22, 1400);
+    this.tone(1400, ctx.currentTime + 0.12, 0.28, 'sine', 0.22, 1050);
+  }
+
+  /** 주사위가 굴러가는 소리 */
+  dice() {
+    if (this.muted) return;
+    const ctx = this.ac();
+    if (!ctx) return;
+    for (let i = 0; i < 9; i++) {
+      this.noise(ctx.currentTime + i * 0.085, 0.05, 0.22, 400 + Math.random() * 500, 150, 'lowpass');
     }
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.exponentialRampToValueAtTime(3000, now + 0.08);
-    filter.frequency.exponentialRampToValueAtTime(400, now + 0.15);
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.01, now);
-    gain.gain.linearRampToValueAtTime(0.25, now + 0.07);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    noise.start();
   }
 
-  // Timer Tick Sound (Countdown)
-  public playTimerTick(urgent: boolean = false) {
-    const ctx = this.getContext();
+  fanfare() {
+    if (this.muted) return;
+    const ctx = this.ac();
     if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    const freq = urgent ? 880 : 440;
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-    gain.gain.setValueAtTime(urgent ? 0.3 : 0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.08);
-  }
-
-  // Round Complete Whistle
-  public playWhistle() {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(900, now);
-    osc.frequency.exponentialRampToValueAtTime(1400, now + 0.1);
-    osc.frequency.setValueAtTime(1400, now + 0.1);
-    osc.frequency.exponentialRampToValueAtTime(1100, now + 0.35);
-
-    gain.gain.setValueAtTime(0.2, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(now + 0.35);
-  }
-
-  // Victory Fanfare (Reveal Phase)
-  public playVictoryFanfare() {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const noteTime = now + idx * 0.12;
-
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, noteTime);
-
-      gain.gain.setValueAtTime(0, noteTime);
-      gain.gain.linearRampToValueAtTime(0.25, noteTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.35);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(noteTime);
-      osc.stop(noteTime + 0.35);
+    [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5].forEach((f, i) => {
+      this.tone(f, ctx.currentTime + i * 0.12, 0.3, 'triangle', 0.22);
     });
+  }
+
+  /* ---------- BGM ---------- */
+  private startBgmLoop() {
+    if (this.bgmTimer !== null) return;
+    const ctx = this.ac();
+    if (!ctx) return;
+    const melody = [523.25, 587.33, 659.25, 783.99, 880, 783.99, 659.25, 587.33];
+    const bass = [261.63, 261.63, 220, 220, 196, 196, 220, 220];
+    this.bgmTimer = window.setInterval(() => {
+      const c = this.ac();
+      if (!c || this.muted) return;
+      const t = c.currentTime;
+      const i = this.bgmStep % melody.length;
+      this.tone(melody[i], t, 0.28, 'triangle', 0.045);
+      if (this.bgmStep % 2 === 0) this.tone(bass[i], t, 0.5, 'sine', 0.05);
+      this.bgmStep++;
+    }, 300);
+  }
+
+  private stopBgmLoop() {
+    if (this.bgmTimer !== null) {
+      clearInterval(this.bgmTimer);
+      this.bgmTimer = null;
+    }
   }
 }
 
