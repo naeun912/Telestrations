@@ -25,9 +25,26 @@ const shuffle = <T,>(arr: T[]): T[] => {
   return a;
 };
 
+// Reliable STUN Server Config for Mobile 5G/LTE cellular WebRTC & Mobile Safari
+const PEER_CONFIG = {
+  host: '0.peerjs.com',
+  port: 443,
+  secure: true,
+  debug: 0,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    ],
+  },
+};
+
 export function useOnlineGame() {
   const profileRef = useRef<StoredProfile>(loadProfile());
-
   const modeRef = useRef<'socket' | 'peer'>('peer');
 
   const socketRef = useRef<Socket | null>(null);
@@ -55,32 +72,6 @@ export function useOnlineGame() {
     setTask(null);
     setBooklets([]);
   }, []);
-
-  const attachSocket = useCallback(
-    (s: Socket) => {
-      s.on('connect', () => {
-        setStatus('connected');
-        const p = profileRef.current;
-        if (p.roomId) {
-          s.emit('joinRoom', { roomId: p.roomId, playerId: p.playerId, name: p.name, avatar: p.avatar }, (ack: Ack) => {
-            if (!ack?.ok) {
-              updateProfile({ roomId: null });
-              resetLocalView();
-            }
-          });
-        }
-      });
-      s.on('connect_error', () => setStatus('error'));
-      s.on('disconnect', () => setStatus('connecting'));
-      s.on('state', (st: OnlineState) => {
-        setOffset(st.serverTime - Date.now());
-        setState(st);
-      });
-      s.on('task', (t: Task) => setTask(t));
-      s.on('revealData', (d: { booklets: Booklet[] }) => setBooklets(d.booklets));
-    },
-    [resetLocalView, updateProfile]
-  );
 
   const generateRoomCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -325,18 +316,33 @@ export function useOnlineGame() {
     }
   }, [advancePeerRound, broadcastPeerState, startPeerPlaying, startPeerWordPick]);
 
+  // Create Peer Room (Host) with Mobile STUN & WSS Config
   const createPeerRoom = useCallback(async (name: string, avatar: string): Promise<boolean> => {
     setStatus('connecting');
     const roomId = generateRoomCode();
-    const peerId = `tele-room-${roomId}`;
+    const peerId = `troom-${roomId}`;
 
     return new Promise((resolve) => {
-      const peer = new Peer(peerId);
+      let isResolved = false;
+      const peer = new Peer(peerId, PEER_CONFIG);
       peerRef.current = peer;
       modeRef.current = 'peer';
 
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          setError('모바일 네트워크 연결에 실패했습니다. 다시 시도해 주세요.');
+          setStatus('error');
+          resolve(false);
+        }
+      }, 10000);
+
       peer.on('open', () => {
+        if (isResolved) return;
+        isResolved = true;
+        clearTimeout(timeout);
         setStatus('connected');
+
         const p = profileRef.current;
         const hostPlayer = { id: p.playerId, name, avatar, connected: true };
 
@@ -393,29 +399,48 @@ export function useOnlineGame() {
       });
 
       peer.on('error', (err) => {
-        console.error('[PeerJS Error]', err);
-        setError('방 생성에 실패했습니다. 다시 시도해 주세요.');
-        setStatus('error');
-        resolve(false);
+        console.error('[PeerJS Mobile Error]', err);
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeout);
+          setError('모바일 방 생성 실패. 잠시 후 다시 시도해 주세요.');
+          setStatus('error');
+          resolve(false);
+        }
       });
     });
   }, [broadcastPeerState, handleHostAction, updateProfile]);
 
+  // Join Peer Room (Client) with Mobile STUN & WSS Config
   const joinPeerRoom = useCallback(async (code: string, name: string, avatar: string): Promise<boolean> => {
     setStatus('connecting');
-    const targetPeerId = `tele-room-${code.toUpperCase()}`;
+    const targetPeerId = `troom-${code.toUpperCase()}`;
 
     return new Promise((resolve) => {
-      const peer = new Peer();
+      let isResolved = false;
+      const peer = new Peer(PEER_CONFIG);
       peerRef.current = peer;
       modeRef.current = 'peer';
 
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          setError('방 입장에 실패했습니다. 방 코드를 다시 확인해 주세요.');
+          setStatus('error');
+          resolve(false);
+        }
+      }, 10000);
+
       peer.on('open', () => {
-        const conn = peer.connect(targetPeerId);
+        const conn = peer.connect(targetPeerId, { reliable: true });
         hostConnRef.current = conn;
 
         conn.on('open', () => {
+          if (isResolved) return;
+          isResolved = true;
+          clearTimeout(timeout);
           setStatus('connected');
+
           const p = profileRef.current;
           updateProfile({ name, avatar, roomId: code.toUpperCase() });
 
@@ -443,16 +468,24 @@ export function useOnlineGame() {
         });
 
         conn.on('error', () => {
-          setError('방 입장에 실패했습니다. 방 코드를 확인해 주세요.');
-          setStatus('error');
-          resolve(false);
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timeout);
+            setError('방 연결 실패. 방 코드를 확인해 주세요.');
+            setStatus('error');
+            resolve(false);
+          }
         });
       });
 
       peer.on('error', () => {
-        setError('존재하지 않거나 열리지 않은 방 코드입니다.');
-        setStatus('error');
-        resolve(false);
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeout);
+          setError('존재하지 않거나 열리지 않은 방 코드입니다.');
+          setStatus('error');
+          resolve(false);
+        }
       });
     });
   }, [updateProfile]);
@@ -482,18 +515,10 @@ export function useOnlineGame() {
     profile: profileRef.current,
     createRoom: async (name: string, avatar: string) => {
       setError('');
-      if (SERVER_URL) {
-        modeRef.current = 'socket';
-        return false;
-      }
       return createPeerRoom(name, avatar);
     },
     joinRoom: async (code: string, name: string, avatar: string) => {
       setError('');
-      if (SERVER_URL) {
-        modeRef.current = 'socket';
-        return false;
-      }
       return joinPeerRoom(code, name, avatar);
     },
     leaveRoom: () => {
