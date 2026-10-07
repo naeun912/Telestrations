@@ -25,20 +25,30 @@ const shuffle = <T,>(arr: T[]): T[] => {
   return a;
 };
 
-// Reliable STUN Server Config for Mobile 5G/LTE cellular WebRTC & Mobile Safari
+// Reliable STUN + TURN Server Config for Mobile 5G/LTE & PC Cross-Network WebRTC
 const PEER_CONFIG = {
-  host: '0.peerjs.com',
-  port: 443,
-  secure: true,
   debug: 0,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+      },
     ],
   },
 };
@@ -425,11 +435,11 @@ export function useOnlineGame() {
       const timeout = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
-          setError('방 입장에 실패했습니다. 방 코드를 다시 확인해 주세요.');
+          setError('방 입장에 실패했습니다. 네트워크 연결 상태 또는 방 코드를 확인해 주세요.');
           setStatus('error');
           resolve(false);
         }
-      }, 10000);
+      }, 15000);
 
       peer.on('open', () => {
         const conn = peer.connect(targetPeerId, { reliable: true });
