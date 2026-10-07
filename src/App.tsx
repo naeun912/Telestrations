@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useLocalGame } from './hooks/useLocalGame';
 import { useOnlineGame } from './hooks/useOnlineGame';
+import { useWakeLock } from './hooks/useWakeLock';
 import { soundFx } from './utils/sound';
 import { Lobby } from './components/Lobby';
 import { OnlineLobby } from './components/OnlineLobby';
@@ -34,8 +35,17 @@ export const App: React.FC = () => {
 
   const isOnlineActive = mode === 'ONLINE' && online.state !== null;
 
+  // 게임 중에는 모바일 화면이 꺼져 연결이 끊기지 않도록 유지
+  useWakeLock(isOnlineActive || local.game !== null);
+
   return (
     <div onClick={handleUserInteraction}>
+      {isOnlineActive && online.status === 'connecting' && (
+        <div className="reconnect-banner" role="status">
+          📡 연결이 끊겼어요. 다시 연결하는 중...
+        </div>
+      )}
+
       {/* 1. ONLINE LOBBY */}
       {isOnlineActive && online.state?.phase === 'LOBBY' && (
         <OnlineLobby

@@ -35,6 +35,8 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
   font-family: var(--font);
   color: var(--ink);
   background-color: var(--cream);
@@ -57,6 +59,33 @@ p {
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.reconnect-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 10px 14px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  background: #ff5a5f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  animation: reconnectPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes reconnectPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 /* ---------- 레이아웃 ---------- */
